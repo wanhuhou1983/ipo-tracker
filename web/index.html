@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPO Tracker - 新股/可转债一站查询</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+               background: #f5f5f5; padding-bottom: 80px; }
+        
+        .header { background: linear-gradient(135deg, #1a1a2e, #16213e); 
+                  color: white; padding: 20px; text-align: center; }
+        .header h1 { font-size: 24px; margin-bottom: 5px; }
+        .header p { font-size: 12px; opacity: 0.7; }
+        
+        .tabs { display: flex; background: white; position: sticky; top: 0; z-index: 100;
+                overflow-x: auto; border-bottom: 1px solid #eee; }
+        .tab { flex: 1; min-width: 80px; padding: 15px 10px; text-align: center; 
+               font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; }
+        .tab.active { color: #1890ff; border-bottom-color: #1890ff; font-weight: 600; }
+        
+        .content { padding: 15px; }
+        
+        .card { background: white; border-radius: 12px; padding: 16px; margin-bottom: 12px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .card-header { display: flex; justify-content: space-between; align-items: center;
+                       margin-bottom: 12px; }
+        .card-title { font-size: 16px; font-weight: 600; color: #333; }
+        .card-tag { font-size: 11px; padding: 3px 8px; border-radius: 4px; }
+        .tag-red { background: #fff1f0; color: #f5222d; }
+        .tag-green { background: #f6ffed; color: #52c41a; }
+        .tag-blue { background: #e6f7ff; color: #1890ff; }
+        
+        .card-row { display: flex; justify-content: space-between; padding: 8px 0;
+                    border-bottom: 1px solid #f0f0f0; }
+        .card-row:last-child { border-bottom: none; }
+        .card-label { color: #666; font-size: 13px; }
+        .card-value { color: #333; font-size: 13px; font-weight: 500; }
+        
+        .loading { text-align: center; padding: 40px; color: #999; }
+        .empty { text-align: center; padding: 40px; color: #999; }
+        
+        .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: white;
+                      display: flex; border-top: 1px solid #eee; padding: 8px 0; }
+        .nav-item { flex: 1; text-align: center; font-size: 11px; color: #666; cursor: pointer; }
+        .nav-item.active { color: #1890ff; }
+        .nav-icon { font-size: 20px; margin-bottom: 2px; }
+        
+        .refresh-btn { position: fixed; right: 20px; bottom: 90px; width: 44px; height: 44px;
+                       background: #1890ff; border-radius: 50%; color: white; display: flex;
+                       align-items: center; justify-content: center; font-size: 20px;
+                       box-shadow: 0 4px 12px rgba(24,144,255,0.4); cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📈 IPO Tracker</h1>
+        <p>新股 · 可转债 · REITs 一站查询</p>
+    </div>
+    
+    <div class="tabs" id="tabs">
+        <div class="tab active" data-type="calendar">日历</div>
+        <div class="tab" data-type="cbond">可转债</div>
+        <div class="tab" data-type="china">A股</div>
+        <div class="tab" data-type="hk">港股</div>
+        <div class="tab" data-type="us">美股</div>
+        <div class="tab" data-type="bj">北交所</div>
+        <div class="tab" data-type="reits">REITs</div>
+    </div>
+    
+    <div class="content" id="content">
+        <div class="loading">加载中...</div>
+    </div>
+    
+    <div class="refresh-btn" onclick="loadData()">↻</div>
+    
+    <div class="bottom-nav">
+        <div class="nav-item active" data-page="home">
+            <div class="nav-icon">🏠</div>
+            <div>首页</div>
+        </div>
+        <div class="nav-item" data-page="calendar">
+            <div class="nav-icon">📅</div>
+            <div>日历</div>
+        </div>
+        <div class="nav-item" data-page="settings">
+            <div class="nav-icon">⚙️</div>
+            <div>设置</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://107.175.49.215:8000';
+        let currentType = 'calendar';
+        
+        // Tab切换
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                currentType = tab.dataset.type;
+                loadData();
+            });
+        });
+        
+        // 加载数据
+        async function loadData() {
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading">加载中...</div>';
+            
+            try {
+                let url, renderFn;
+                switch(currentType) {
+                    case 'calendar':
+                        url = `${API_BASE}/api/calendar`;
+                        renderFn = renderCalendar;
+                        break;
+                    case 'cbond':
+                        url = `${API_BASE}/api/cb/new`;
+                        renderFn = renderCBond;
+                        break;
+                    case 'china':
+                        url = `${API_BASE}/api/ipo/china`;
+                        renderFn = renderChina;
+                        break;
+                    case 'hk':
+                        url = `${API_BASE}/api/ipo/hk`;
+                        renderFn = renderHK;
+                        break;
+                    case 'us':
+                        url = `${API_BASE}/api/ipo/us`;
+                        renderFn = renderUS;
+                        break;
+                    case 'bj':
+                        url = `${API_BASE}/api/ipo/bj`;
+                        renderFn = renderBJ;
+                        break;
+                    case 'reits':
+                        url = `${API_BASE}/api/reits/new`;
+                        renderFn = renderREITs;
+                        break;
+                }
+                
+                const res = await fetch(url);
+                const json = await res.json();
+                content.innerHTML = renderFn(json.data || json);
+            } catch(e) {
+                content.innerHTML = `<div class="empty">连接失败，请确保后端服务已启动<br>${e.message}</div>`;
+            }
+        }
+        
+        // 渲染函数
+        function renderCalendar(data) {
+            let html = '';
+            const titles = {'可转债': '可转债', 'A股新股': 'A股', '港股新股': '港股', 
+                           '美股新股': '美股', '北交所': '北交所', 'REITs': 'REITs'};
+            const colors = {'可转债': 'red', 'A股新股': 'green', '港股新股': 'blue',
+                           '美股新股': 'purple', '北交所': 'orange', 'REITs': 'cyan'};
+            
+            for (const [key, items] of Object.entries(data)) {
+                if (!items || items.length === 0) continue;
+                const tagClass = `tag-${colors[key]}`;
+                html += `<div class="card"><div class="card-header">
+                    <span class="card-title">${titles[key] || key}</span>
+                    <span class="card-tag ${tagClass}">${items.length}只</span>
+                </div>`;
+                
+                items.slice(0, 3).forEach(item => {
+                    const name = item.name || item.stock_name || '-';
+                    const date = item.ipo_date || item.listing_date || '-';
+                    html += `<div class="card-row">
+                        <span class="card-label">${name}</span>
+                        <span class="card-value">${date}</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            return html || '<div class="empty">暂无数据</div>';
+        }
+        
+        function renderCBond(data) {
+            if (!data || !data.length) return '<div class="empty">暂无可转债</div>';
+            return data.map(item => `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">${item.name}</span>
+                        <span class="card-tag tag-red">可转债</span>
+                    </div>
+                    <div class="card-row"><span class="card-label">正股</span><span class="card-value">${item.stock_name}</span></div>
+                    <div class="card-row"><span class="card-label">转股价</span><span class="card-value">${item.price}元</span></div>
+                    <div class="card-row"><span class="card-label">发行规模</span><span class="card-value">${item.size}亿</span></div>
+                    <div class="card-row"><span class="card-label">评级</span><span class="card-value">${item.rating}</span></div>
+                    <div class="card-row"><span class="card-label">溢价率</span><span class="card-value">${item.premium}%</span></div>
+                    <div class="card-row"><span class="card-label">上市日期</span><span class="card-value">${item.ipo_date}</span></div>
+                </div>
+            `).join('');
+        }
+        
+        function renderChina(data) {
+            if (!data || !data.length) return '<div class="empty">暂无A股新股</div>';
+            return data.map(item => `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">${item.name}</span>
+                        <span class="card-tag tag-green">A股</span>
+                    </div>
+                    <div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.ts_code}</span></div>
+                    <div class="card-row"><span class="card-label">发行价</span><span class="card-value">${item.price}元</span></div>
+                    <div class="card-row"><span class="card-label">市盈率</span><span class="card-value">${item.pe}倍</span></div>
+                    <div class="card-row"><span class="card-label">募资</span><span class="card-value">${item.amount}亿</span></div>
+                    <div class="card-row"><span class="card-label">申购日期</span><span class="card-value">${item.ipo_date}</span></div>
+                    <div class="card-row"><span class="card-label">上市日期</span><span class="card-value">${item.listing_date}</span></div>
+                </div>
+            `).join('');
+        }
+        
+        function renderHK(data) {
+            if (!data || !data.length) return '<div class="empty">暂无港股新股</div>';
+            return data.map(item => `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">${item.name}</span>
+                        <span class="card-tag tag-blue">港股</span>
+                    </div>
+                    <div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.code}</span></div>
+                    <div class="card-row"><span class="card-label">发行价</span><span class="card-value">${item.price_min}-${item.price_max}港元</span></div>
+                    <div class="card-row"><span class="card-label">募资规模</span><span class="card-value">${item.size}亿</span></div>
+                    <div class="card-row"><span class="card-label">孖展倍数</span><span class="card-value">${item.margin}倍</span></div>
+                    <div class="card-row"><span class="card-label">招股日期</span><span class="card-value">${item.ipo_date}</span></div>
+                    <div class="card-row"><span class="card-label">上市日期</span><span class="card-value">${item.listing_date}</span></div>
+                </div>
+            `).join('');
+        }
+        
+        function renderUS(data) {
+            if (!data || !data.length) return '<div class="empty">暂无美股新股</div>';
+            return data.map(item => `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">${item.name}</span>
+                        <span class="card-tag" style="background:#f3e5f5;color:#7b1fa2">美股</span>
+                    </div>
+                    <div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.symbol}</span></div>
+                    <div class="card-row"><span class="card-label">交易所</span><span class="card-value">${item.exchange}</span></div>
+                    <div class="card-row"><span class="card-label">发行价</span><span class="card-value">$${item.price}</span></div>
+                    <div class="card-row"><span class="card-label">预期上市</span><span class="card-value">${item.expected_date}</span></div>
+                </div>
+            `).join('');
+        }
+        
+        function renderBJ(data) {
+            if (!data || !data.length) return '<div class="empty">暂无北交所新股</div>';
+            return data.map(item => `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">${item.name}</span>
+                        <span class="card-tag" style="background:#fff3e0;color:#e65100">北交所</span>
+                    </div>
+                    <div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.ts_code}</span></div>
+                    <div class="card-row"><span class="card-label">发行价</span><span class="card-value">${item.price}元</span></div>
+                    <div class="card-row"><span class="card-label">市盈率</span><span class="card-value">${item.pe}倍</span></div>
+                    <div class="card-row"><span class="card-label">申购日期</span><span class="card-value">${item.ipo_date}</span></div>
+                    <div class="card-row"><span class="card-label">上市日期</span><span class="card-value">${item.listing_date}</span></div>
+                </div>
+            `).join('');
+        }
+        
+        function renderREITs(data) {
+            if (!data || !data.length) return '<div class="empty">暂无REITs</div>';
+            return data.map(item => `
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title">${item.name}</span>
+                        <span class="card-tag" style="background:#e0f2f1;color:#00695c">REITs</span>
+                    </div>
+                    <div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.ts_code}</span></div>
+                    <div class="card-row"><span class="card-label">发行价</span><span class="card-value">${item.price}元</span></div>
+                    <div class="card-row"><span class="card-label">规模</span><span class="card-value">${item.size}亿</span></div>
+                    <div class="card-row"><span class="card-label">上市日期</span><span class="card-value">${item.ipo_date}</span></div>
+                </div>
+            `).join('');
+        }
+        
+        // 初始加载
+        loadData();
+    </script>
+</body>
+</html>

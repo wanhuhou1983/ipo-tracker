@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>新股/可转债追踪</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --primary: #2563eb;
+            --success: #16a34a;
+            --warning: #f59e0b;
+            --danger: #dc2626;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --text-secondary: #64748b;
+            --border: #e2e8f0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+            padding-bottom: 80px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            color: white;
+            padding: 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .header .subtitle {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 4px;
+        }
+        
+        .tabs {
+            display: flex;
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+            position: sticky;
+            top: 70px;
+            z-index: 99;
+        }
+        
+        .tab {
+            flex: 1;
+            min-width: 60px;
+            padding: 12px 8px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            white-space: nowrap;
+        }
+        
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+            font-weight: 500;
+        }
+        
+        .content {
+            padding: 12px;
+        }
+        
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .card-code {
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: var(--bg);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        
+        .card-info {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            font-size: 13px;
+        }
+        
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .info-label {
+            color: var(--text-secondary);
+        }
+        
+        .info-value {
+            font-weight: 500;
+        }
+        
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        
+        .tag-upcoming { background: #dbeafe; color: #1d4ed8; }
+        .tag-today { background: #dcfce7; color: #16a34a; }
+        .tag-past { background: #f1f5f9; color: #64748b; }
+        
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+        
+        .refresh-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 25px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .refresh-btn:active {
+            transform: scale(0.95);
+        }
+        
+        .calendar-section {
+            margin-bottom: 20px;
+        }
+        
+        .calendar-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--text);
+        }
+        
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            text-align: center;
+        }
+        
+        .calendar-day {
+            padding: 8px 4px;
+            font-size: 11px;
+            border-radius: 4px;
+        }
+        
+        .calendar-day.has-event {
+            background: #dbeafe;
+            color: #1d4ed8;
+            font-weight: 500;
+        }
+        
+        .calendar-day.today {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .calendar-day.header {
+            background: none;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📈 新股/可转债追踪</h1>
+        <div class="subtitle" id="lastUpdate">最后更新: --</div>
+    </div>
+    
+    <div class="tabs" id="tabs">
+        <div class="tab active" data-type="calendar">日历</div>
+        <div class="tab" data-type="cb">可转债</div>
+        <div class="tab" data-type="china">A股新股</div>
+        <div class="tab" data-type="hk">港股</div>
+        <div class="tab" data-type="us">美股</div>
+        <div class="tab" data-type="bj">北交所</div>
+        <div class="tab" data-type="reits">REITs</div>
+    </div>
+    
+    <div class="content" id="content">
+        <div class="loading">加载中...</div>
+    </div>
+    
+    <button class="refresh-btn" id="refreshBtn" title="刷新数据">↻</button>
+    
+    <script>
+        const API_BASE = window.location.origin;
+        let currentType = 'calendar';
+        let dataCache = {};
+        
+        // API 映射
+        const API_MAP = {
+            'calendar': '/api/calendar',
+            'cb': '/api/cb/new',
+            'china': '/api/ipo/china',
+            'hk': '/api/ipo/hk',
+            'us': '/api/ipo/us',
+            'bj': '/api/ipo/bj',
+            'reits': '/api/reits/new'
+        };
+        
+        // 格式化日期
+        function formatDate(dateStr) {
+            if (!dateStr) return '--';
+            try {
+                const d = new Date(dateStr);
+                return `${d.getMonth() + 1}月${d.getDate()}日`;
+            } catch {
+                return dateStr;
+            }
+        }
+        
+        // 获取标签样式
+        function getTagClass(dateStr) {
+            if (!dateStr) return 'tag-past';
+            const today = new Date().toISOString().split('T')[0];
+            if (dateStr === today) return 'tag-today';
+            if (dateStr > today) return 'tag-upcoming';
+            return 'tag-past';
+        }
+        
+        // 渲染日历
+        function renderCalendar(events) {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = today.getMonth();
+            
+            let html = '<div class="calendar-section">';
+            html += '<div class="calendar-title">📅 本月上市日历</div>';
+            html += '<div class="calendar-grid">';
+            
+            // 星期头
+            const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+            weekDays.forEach(d => {
+                html += `<div class="calendar-day header">${d}</div>`;
+            });
+            
+            // 获取当月第一天
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            
+            // 事件日期集合
+            const eventDates = new Set();
+            events.forEach(e => {
+                if (e.list_date) eventDates.add(e.list_date.slice(0, 10));
+            });
+            
+            // 空白填充
+            for (let i = 0; i < firstDay; i++) {
+                html += '<div class="calendar-day"></div>';
+            }
+            
+            // 日期
+            for (let d = 1; d <= daysInMonth; d++) {
+                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const isToday = dateStr === today.toISOString().split('T')[0];
+                const hasEvent = eventDates.has(dateStr);
+                
+                let cls = 'calendar-day';
+                if (isToday) cls += ' today';
+                else if (hasEvent) cls += ' has-event';
+                
+                html += `<div class="${cls}">${d}</div>`;
+            }
+            
+            html += '</div></div>';
+            
+            // 近期事件列表
+            const upcoming = events.filter(e => e.list_date && e.list_date >= today.toISOString().split('T')[0]).slice(0, 10);
+            
+            if (upcoming.length > 0) {
+                html += '<div class="calendar-title">📋 近期上市</div>';
+                upcoming.forEach(e => {
+                    html += `
+                        <div class="card">
+                            <div class="card-header">
+                                <span class="card-title">${e.name}</span>
+                                <span class="tag ${getTagClass(e.list_date)}">${formatDate(e.list_date)}</span>
+                            </div>
+                            <div class="card-info">
+                                <div class="info-item">
+                                    <span class="info-label">代码</span>
+                                    <span class="info-value">${e.code || '--'}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">类型</span>
+                                    <span class="info-value">${e.type || '--'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            return html;
+        }
+        
+        // 渲染列表
+        function renderList(data, type) {
+            if (!data || data.length === 0) {
+                return '<div class="empty">暂无数据</div>';
+            }
+            
+            let html = '';
+            
+            data.forEach(item => {
+                html += `
+                    <div class="card">
+                        <div class="card-header">
+                            <span class="card-title">${item.name || '--'}</span>
+                            <span class="card-code">${item.code || item.symbol || '--'}</span>
+                        </div>
+                        <div class="card-info">
+                `;
+                
+                if (type === 'cb') {
+                    html += `
+                        <div class="info-item"><span class="info-label">申购日期</span><span class="info-value">${formatDate(item.apply_date)}</span></div>
+                        <div class="info-item"><span class="info-label">上市日期</span><span class="info-value">${formatDate(item.list_date)}</span></div>
+                        <div class="info-item"><span class="info-label">发行价</span><span class="info-value">${item.price || '--'}元</span></div>
+                        <div class="info-item"><span class="info-label">债券评级</span><span class="info-value">${item.rating || '--'}</span></div>
+                        <div class="info-item"><span class="info-label">转股溢价率</span><span class="info-value">${item.yield ? item.yield + '%' : '--'}</span></div>
+                        <div class="info-item"><span class="info-label">规模</span><span class="info-value">${item.size ? item.size + '亿' : '--'}</span></div>
+                    `;
+                } else if (type === 'china' || type === 'bj') {
+                    html += `
+                        <div class="info-item"><span class="info-label">申购日期</span><span class="info-value">${formatDate(item.apply_date)}</span></div>
+                        <div class="info-item"><span class="info-label">上市日期</span><span class="info-value">${formatDate(item.list_date)}</span></div>
+                        <div class="info-item"><span class="info-label">发行价</span><span class="info-value">${item.price || '--'}元</span></div>
+                        <div class="info-item"><span class="info-label">市盈率</span><span class="info-value">${item.pe || '--'}</span></div>
+                        <div class="info-item"><span class="info-label">募资规模</span><span class="info-value">${item.size ? item.size + '亿' : '--'}</span></div>
+                        <div class="info-item"><span class="info-label">行业</span><span class="info-value">${item.industry || '--'}</span></div>
+                    `;
+                } else if (type === 'hk') {
+                    html += `
+                        <div class="info-item"><span class="info-label">申购日期</span><span class="info-value">${formatDate(item.apply_date)}</span></div>
+                        <div class="info-item"><span class="info-label">上市日期</span><span class="info-value">${formatDate(item.list_date)}</span></div>
+                        <div class="info-item"><span class="info-label">发行价</span><span class="info-value">${item.price || '--'}港币</span></div>
+                        <div class="info-item"><span class="info-label">募资规模</span><span class="info-value">${item.raise_size ? item.raise_size + '亿' : '--'}</span></div>
+                        <div class="info-item"><span class="info-label">市盈率</span><span class="info-value">${item.pe || '--'}</span></div>
+                    `;
+                } else if (type === 'us') {
+                    html += `
+                        <div class="info-item"><span class="info-label">交易所</span><span class="info-value">${item.exchange || '--'}</span></div>
+                        <div class="info-item"><span class="info-label">发行价</span><span class="info-value">${item.price || '--'}</span></div>
+                        <div class="info-item"><span class="info-label">简介</span><span class="info-value">${item.description ? (item.description.slice(0, 20) + '...') : '--'}</span></div>
+                    `;
+                } else if (type === 'reits') {
+                    html += `
+                        <div class="info-item"><span class="info-label">上市日期</span><span class="info-value">${formatDate(item.list_date)}</span></div>
+                        <div class="info-item"><span class="info-label">发行价</span><span class="info-value">${item.price || '--'}元</span></div>
+                        <div class="info-item"><span class="info-label">规模</span><span class="info-value">${item.size ? item.size + '亿' : '--'}</span></div>
+                        <div class="info-item"><span class="info-label">预期收益</span><span class="info-value">${item.yield ? item.yield + '%' : '--'}</span></div>
+                    `;
+                }
+                
+                html += '</div></div>';
+            });
+            
+            return html;
+        }
+        
+        // 加载数据
+        async function loadData(type) {
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading">加载中...</div>';
+            
+            try {
+                const url = API_BASE + API_MAP[type];
+                const resp = await fetch(url);
+                const data = await resp.json();
+                
+                dataCache[type] = data;
+                
+                if (type === 'calendar') {
+                    content.innerHTML = renderCalendar(data);
+                } else {
+                    content.innerHTML = renderList(data, type);
+                }
+                
+                document.getElementById('lastUpdate').textContent = `最后更新: ${new Date().toLocaleTimeString()}`;
+            } catch (e) {
+                content.innerHTML = '<div class="empty">加载失败，请点击右下角刷新</div>';
+                console.error(e);
+            }
+        }
+        
+        // 刷新数据
+        async function refreshData() {
+            const btn = document.getElementById('refreshBtn');
+            btn.style.transform = 'rotate(360deg)';
+            
+            try {
+                const resp = await fetch(API_BASE + '/api/refresh', { method: 'POST' });
+                const result = await resp.json();
+                alert('刷新成功！');
+                loadData(currentType);
+            } catch (e) {
+                alert('刷新失败: ' + e.message);
+            }
+            
+            setTimeout(() => {
+                btn.style.transform = 'rotate(0deg)';
+            }, 500);
+        }
+        
+        // Tab 切换
+        document.getElementById('tabs').addEventListener('click', (e) => {
+            if (e.target.classList.contains('tab')) {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                e.target.classList.add('active');
+                currentType = e.target.dataset.type;
+                loadData(currentType);
+            }
+        });
+        
+        // 刷新按钮
+        document.getElementById('refreshBtn').addEventListener('click', refreshData);
+        
+        // 初始加载
+        loadData('calendar');
+    </script>
+</body>
+</html>

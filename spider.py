@@ -28,8 +28,9 @@ def _clean_date(s):
 
 def _get_em(report_name, filter_str=None, sort_col=None, page_size=50, sort_order="desc", page_number=1):
     """东方财富 datacenter 通用请求
-    Args:
-        page_number: 页码，从1开始
+    Returns:
+        list: 数据列表
+        None: 请求异常（网络错误等）
     """
     params = {
         "reportName": report_name,
@@ -47,16 +48,30 @@ def _get_em(report_name, filter_str=None, sort_col=None, page_size=50, sort_orde
         d = r.json()
         return d.get("result", {}).get("data", []) or []
     except Exception as e:
-        print(f"[em] {report_name} error: {e}")
-        return []
+        print(f"[em] {report_name} page={page_number} error: {e}")
+        return None  # 返回None表示请求异常
 
 
-def _get_em_all(report_name, filter_str=None, sort_col=None, page_size=100, sort_order="desc", max_pages=5):
-    """东方财富 datacenter 翻页获取所有数据"""
+def _get_em_all(report_name, filter_str=None, sort_col=None, page_size=100, sort_order="desc", max_pages=5, max_retries=2):
+    """东方财富 datacenter 翻页获取所有数据
+    Args:
+        max_retries: 每页最大重试次数
+    """
     all_data = []
     for page in range(1, max_pages + 1):
-        data = _get_em(report_name, filter_str, sort_col, page_size, sort_order, page)
+        data = None
+        for retry in range(max_retries):
+            data = _get_em(report_name, filter_str, sort_col, page_size, sort_order, page)
+            if data is not None:
+                break
+            print(f"[em] {report_name} page={page} retry {retry + 1}/{max_retries}")
+        
+        if data is None:
+            # 重试全部失败，记录警告
+            print(f"[em] {report_name} page={page} failed after {max_retries} retries, aborting")
+            break
         if not data:
+            # 空结果，正常结束
             break
         all_data.extend(data)
         if len(data) < page_size:
@@ -240,12 +255,12 @@ def get_reits(days=None):
         items = re.findall(r'\["(\d+)",\s*"([^"]+)",\s*"([^"]*)"', r.text)
         result = []
         for code, name, pinyin in items:
-            # 筛选中国公募REITs：代码508开头 或 180开头且名称含REIT
+            # 筛选中国公募REITs：代码508开头，或180开头且拼音/名称含REIT
             pinyin_upper = pinyin.upper()
             name_upper = name.upper()
-            is_reit = code.startswith("508") or (code.startswith("180") and "REIT" in pinyin_upper)
-            # 增加名称二次校验，避免误筛
-            is_reit = is_reit or ("REIT" in name_upper and (code.startswith("508") or code.startswith("180")))
+            is_reit = code.startswith("508") or (
+                code.startswith("180") and ("REIT" in pinyin_upper or "REIT" in name_upper)
+            )
             if is_reit:
                 result.append({
                     "code": code,

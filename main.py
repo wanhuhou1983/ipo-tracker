@@ -13,7 +13,7 @@ app = FastAPI(title="IPO Tracker", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -66,8 +66,8 @@ async def api_bj(days: int = Query(180, ge=1, le=365)):
 
 
 @app.get("/api/reits/new")
-async def api_reits(days: int = Query(365, ge=1, le=365)):
-    """REITs"""
+async def api_reits():
+    """REITs（返回全部，无日期过滤）"""
     data = spider.get_reits()
     return {"code": 0, "data": data, "total": len(data)}
 

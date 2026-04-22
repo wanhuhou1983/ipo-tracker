@@ -26,12 +26,15 @@ def _clean_date(s):
     return ""
 
 
-def _get_em(report_name, filter_str=None, sort_col=None, page_size=50, sort_order="desc"):
-    """东方财富 datacenter 通用请求"""
+def _get_em(report_name, filter_str=None, sort_col=None, page_size=50, sort_order="desc", page_number=1):
+    """东方财富 datacenter 通用请求
+    Args:
+        page_number: 页码，从1开始
+    """
     params = {
         "reportName": report_name,
         "columns": "ALL",
-        "pageNumber": 1, "pageSize": page_size,
+        "pageNumber": page_number, "pageSize": page_size,
         "source": "WEB", "client": "WEB",
     }
     if filter_str:
@@ -48,16 +51,35 @@ def _get_em(report_name, filter_str=None, sort_col=None, page_size=50, sort_orde
         return []
 
 
+def _get_em_all(report_name, filter_str=None, sort_col=None, page_size=100, sort_order="desc", max_pages=5):
+    """东方财富 datacenter 翻页获取所有数据"""
+    all_data = []
+    for page in range(1, max_pages + 1):
+        data = _get_em(report_name, filter_str, sort_col, page_size, sort_order, page)
+        if not data:
+            break
+        all_data.extend(data)
+        if len(data) < page_size:
+            break
+    return all_data
+
+
 # ==================== A股新股 ====================
-def get_ipo_china(days=90):
+def get_ipo_a(days=90, bj=False):
+    """统一获取A股/北交所新股
+    Args:
+        days: 查询天数
+        bj: True返回北交所，False返回沪深A股
+    """
     start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
-    data = _get_em("RPTA_APP_IPOAPPLY",
-                   filter_str=f"(APPLY_DATE>='{start}')",
-                   sort_col="APPLY_DATE", page_size=100)
+    data = _get_em_all("RPTA_APP_IPOAPPLY",
+                       filter_str=f"(APPLY_DATE>='{start}')",
+                       sort_col="APPLY_DATE", page_size=100, max_pages=5)
     result = []
     for item in data:
-        if str(item.get("TRADE_MARKET_CODE", "")) == "069001017":
-            continue  # 北交所走单独接口
+        is_bj = str(item.get("TRADE_MARKET_CODE", "")) == "069001017"
+        if bj != is_bj:
+            continue
         result.append({
             "ts_code": item.get("SECUCODE", ""),
             "code": item.get("SECURITY_CODE", ""),
@@ -77,12 +99,17 @@ def get_ipo_china(days=90):
     return result
 
 
+def get_ipo_china(days=90):
+    """沪深A股新股（兼容旧接口）"""
+    return get_ipo_a(days, bj=False)
+
+
 # ==================== 可转债 ====================
 def get_cb_new(days=90):
     start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
-    data = _get_em("RPT_BOND_CB_LIST",
-                   filter_str=f"(LISTING_DATE>='{start}')",
-                   sort_col="LISTING_DATE")
+    data = _get_em_all("RPT_BOND_CB_LIST",
+                       filter_str=f"(LISTING_DATE>='{start}')",
+                       sort_col="LISTING_DATE", page_size=100, max_pages=3)
     result = []
     for item in data:
         result.append({
@@ -136,8 +163,8 @@ def get_ipo_hk(days=90):
                             })
                         if result:
                             return result
-                    except:
-                        pass
+                    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
+                        print(f"[hk] JSON parse error: {e}")
     except Exception as e:
         print(f"[hk] error: {e}")
     return []
@@ -199,42 +226,26 @@ def get_ipo_us(days=90):
 
 # ==================== 北交所新股 ====================
 def get_ipo_bj(days=180):
-    start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
-    data = _get_em("RPTA_APP_IPOAPPLY",
-                   filter_str=f"(APPLY_DATE>='{start}')",
-                   sort_col="APPLY_DATE", page_size=200)
-    result = []
-    for item in data:
-        if str(item.get("TRADE_MARKET_CODE", "")) != "069001017":
-            continue
-        result.append({
-            "ts_code": item.get("SECUCODE", ""),
-            "code": item.get("SECURITY_CODE", ""),
-            "name": item.get("SECURITY_NAME_ABBR", ""),
-            "apply_code": item.get("APPLY_CODE", ""),
-            "apply_date": _clean_date(item.get("APPLY_DATE", "")),
-            "listing_date": _clean_date(item.get("LISTING_DATE", "")),
-            "online_issue_date": _clean_date(item.get("ONLINE_ISSUE_DATE", "")),
-            "price": item.get("ISSUE_PRICE", ""),
-            "pe": item.get("AFTER_ISSUE_PE", ""),
-            "amount": item.get("ISSUE_NUM", ""),
-            "funds": item.get("TOTAL_RAISE_FUNDS", ""),
-            "ballot": item.get("BALLOT_NUM", ""),
-        })
-    return result
+    """北交所新股（使用合并后的get_ipo_a）"""
+    return get_ipo_a(days, bj=True)
 
 
 # ==================== REITs ====================
-def get_reits():
+def get_reits(days=None):
+    """获取REITs列表，days参数已废弃（基金代码库无日期信息）"""
     try:
         r = httpx.get("https://fund.eastmoney.com/js/fundcode_search.js",
                       headers=HEADERS, timeout=15)
-        # 解析基金列表，筛选REITs（名称包含REIT或代码以508/180开头且含REIT）
+        # 解析基金列表，筛选REITs
         items = re.findall(r'\["(\d+)",\s*"([^"]+)",\s*"([^"]*)"', r.text)
         result = []
         for code, name, pinyin in items:
-            # 筛选中国公募REITs（代码508开头 或 180开头且含REIT）
-            is_reit = ("REIT" in pinyin.upper() and code.startswith("180")) or code.startswith("508")
+            # 筛选中国公募REITs：代码508开头 或 180开头且名称含REIT
+            pinyin_upper = pinyin.upper()
+            name_upper = name.upper()
+            is_reit = code.startswith("508") or (code.startswith("180") and "REIT" in pinyin_upper)
+            # 增加名称二次校验，避免误筛
+            is_reit = is_reit or ("REIT" in name_upper and (code.startswith("508") or code.startswith("180")))
             if is_reit:
                 result.append({
                     "code": code,

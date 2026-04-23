@@ -175,9 +175,10 @@
             const content = document.getElementById('content');
             content.innerHTML = '<div class="loading">加载日历...</div>';
             try {
-                const [chinaRes, cbRes] = await Promise.all([
+                const [chinaRes, cbRes, hkRes] = await Promise.all([
                     fetch(`${API_BASE}/api/ipo/china?days=120`).then(r=>r.json()),
                     fetch(`${API_BASE}/api/cb/new?days=120`).then(r=>r.json()),
+                    fetch(`${API_BASE}/api/ipo/hk?days=120`).then(r=>r.json()),
                 ]);
                 calendarData = {};
                 (chinaRes.data||[]).forEach(item => {
@@ -202,6 +203,18 @@
                     if (list && list.length>=10) {
                         if (!calendarData[list]) calendarData[list]={subscribe:[],listing:[]};
                         calendarData[list].listing.push({name:item.name,market:'可转债',type:'cb'});
+                    }
+                });
+                (hkRes.data||[]).forEach(item => {
+                    const sub = item.apply_date;
+                    const list = item.listing_date;
+                    if (sub && sub.length>=10) {
+                        if (!calendarData[sub]) calendarData[sub]={subscribe:[],listing:[]};
+                        calendarData[sub].subscribe.push({name:item.name,market:'港股',type:'hk'});
+                    }
+                    if (list && list.length>=10) {
+                        if (!calendarData[list]) calendarData[list]={subscribe:[],listing:[]};
+                        calendarData[list].listing.push({name:item.name,market:'港股',type:'hk'});
                     }
                 });
                 renderCalendarView();
@@ -314,8 +327,8 @@
         
         function renderHK(data) {
             if(!data||!data.length) return '<div class="empty">暂无港股新股</div>';
-            data=[...data].sort((a,b)=>(b.ipo_date||'').localeCompare(a.ipo_date||''));
-            return data.map(item=>`<div class="card"><div class="card-header"><span class="card-title">${item.name}</span><span class="card-tag tag-blue">港股</span></div><div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.code}</span></div><div class="card-row"><span class="card-label">招股日期</span><span class="card-value">${item.ipo_date}</span></div><div class="card-row"><span class="card-label">上市日期</span><span class="card-value">${item.listing_date||'-'}</span></div></div>`).join('');
+            data=[...data].sort((a,b)=>(b.listing_date||b.apply_date||'').localeCompare(a.listing_date||a.apply_date||''));
+            return data.map(item=>`<div class="card"><div class="card-header"><span class="card-title">${item.name}</span><span class="card-tag tag-blue">港股</span></div><div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.code}</span></div><div class="card-row"><span class="card-label">招股价</span><span class="card-value">${item.price||'-'}港元</span></div><div class="card-row"><span class="card-label">招股日期</span><span class="card-value">${item.apply_date||'-'}</span></div><div class="card-row"><span class="card-label">上市日期</span><span class="card-value">${item.listing_date||'-'}</span></div><div class="card-row"><span class="card-label">募资</span><span class="card-value">${item.funds||'-'}</span></div></div>`).join('');
         }
         
         function renderUS(data) {

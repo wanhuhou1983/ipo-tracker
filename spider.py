@@ -3,7 +3,7 @@
 数据源：
 - A股新股/北交所：东方财富 RPTA_APP_IPOAPPLY
 - 可转债：东方财富 RPT_BOND_CB_LIST  
-- 港股新股：富途港股IPO页面
+- 港股新股：东方财富港股频道HTML页面解析 (hk.eastmoney.com/ipolist.html)
 - 美股新股：NASDAQ IPO Calendar API
 - REITs：东方财富基金代码库（fundcode_search.js）
 """
@@ -150,66 +150,67 @@ def get_cb_new(days=90):
 
 # ==================== 港股新股 ====================
 def get_ipo_hk(days=90):
-    """港股新股 - 从东方财富数据中心获取"""
+    """港股新股 - 从东方财富港股IPO页面HTML解析
+    数据源: http://hk.eastmoney.com/ipolist.html
+    表格字段: 序号, 股票代码, 股票名称, 招股价, 招股数(股), 募集资金(港元), 招股日期, 上市日期
+    """
     try:
+        r = httpx.get("http://hk.eastmoney.com/ipolist.html",
+                      headers=HEADERS, timeout=15, follow_redirects=True)
+        if r.status_code != 200:
+            print(f"[hk] page status={r.status_code}")
+            return []
+
+        text = r.text
+        # 提取表格
+        tables = re.findall(r'<table[^>]*>(.*?)</table>', text, re.DOTALL)
+        if not tables:
+            print("[hk] no table found in page")
+            return []
+
+        rows = re.findall(r'<tr[^>]*>(.*?)</tr>', tables[0], re.DOTALL)
         start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
-        data = _get_em_all("RPTA_HK_NEWSTOCK",
-                           filter_str=f'(LISTING_DATE>=\'{start}\')',
-                           sort_col="LISTING_DATE", page_size=50, max_pages=3)
-        if data:
-            result = []
-            for item in data:
-                result.append({
-                    "code": item.get("SECURITY_CODE", ""),
-                    "name": item.get("SECURITY_NAME_ABBR", ""),
-                    "ipo_date": _clean_date(item.get("IPO_DATE", "")),
-                    "listing_date": _clean_date(item.get("LISTING_DATE", "")),
-                    "price_min": item.get("PRICE_MIN", ""),
-                    "price_max": item.get("PRICE_MAX", ""),
-                    "market": "港交所",
-                })
-            return result
+        result = []
+
+        for row in rows:
+            cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+            if len(cells) < 7:
+                continue
+            # 清理HTML标签
+            clean = [re.sub(r'<[^>]+>', '', c).strip() for c in cells]
+            # clean: [序号, 股票代码, 股票名称, 招股价, 招股数, 募集资金, 招股日期, 上市日期]
+            code = clean[1]
+            name = clean[2]
+            price = clean[3]
+            shares = clean[4]
+            funds = clean[5]
+            apply_date = clean[6]  # 招股日期
+            listing_date = clean[7] if len(clean) > 7 else ""  # 上市日期
+
+            # 跳过表头行
+            if code == "股票代码" or not code or not name:
+                continue
+
+            # 按日期过滤
+            date_check = listing_date or apply_date
+            if date_check and date_check < start:
+                continue
+
+            result.append({
+                "code": code,
+                "name": name,
+                "apply_date": apply_date,
+                "listing_date": listing_date,
+                "price": price,
+                "shares": shares,
+                "funds": funds,
+                "market": "港交所",
+            })
+
+        return result
     except Exception as e:
-        print(f"[hk] eastmoney error: {e}")
-    
-    # 备用：富途页面
-    try:
-        r = httpx.get("https://www.futunn.com/quote/ipo-hk",
-                      headers={**HEADERS, "Referer": "https://www.futunn.com/"},
-                      timeout=15, follow_redirects=True)
-        if r.status_code == 200 and len(r.text) > 1000:
-            patterns = [
-                r'"ipoList"\s*:\s*(\[.*?\])',
-                r'"ipoData"\s*:\s*(\[.*?\])',
-                r'"list"\s*:\s*(\[.*?\])',
-            ]
-            for pattern in patterns:
-                match = re.search(pattern, r.text, re.S)
-                if match:
-                    try:
-                        data = json.loads(match.group(1))
-                        result = []
-                        for item in data[:50]:
-                            code = item.get("stockCode", item.get("code", item.get("symbol", "")))
-                            name = item.get("stockName", item.get("name", item.get("companyName", "")))
-                            if not name:
-                                continue
-                            result.append({
-                                "code": str(code),
-                                "name": str(name),
-                                "ipo_date": str(item.get("listingDate", item.get("pricingDate", item.get("expectedDate", ""))))[:10],
-                                "listing_date": str(item.get("listingDate", ""))[:10],
-                                "price_min": item.get("priceMin", item.get("priceRange", "")),
-                                "price_max": item.get("priceMax", ""),
-                                "market": "港交所",
-                            })
-                        if result:
-                            return result
-                    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
-                        print(f"[hk] JSON parse error: {e}")
-    except Exception as e:
-        print(f"[hk] futunn error: {e}")
-    return []
+        print(f"[hk] error: {e}")
+        return []
 
 
 # ==================== 美股新股 ====================

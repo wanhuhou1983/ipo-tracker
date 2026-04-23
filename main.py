@@ -39,7 +39,7 @@ async def api_cb(days: int = Query(90, ge=1, le=365)):
 
 @app.get("/api/ipo/china")
 async def api_china(days: int = Query(90, ge=1, le=365)):
-    """A股新股"""
+    """A股新股（含北交所）"""
     data = spider.get_ipo_china(days)
     return {"code": 0, "data": data, "total": len(data)}
 
@@ -58,11 +58,6 @@ async def api_us(days: int = Query(90, ge=1, le=365)):
     return {"code": 0, "data": data, "total": len(data)}
 
 
-@app.get("/api/ipo/bj")
-async def api_bj(days: int = Query(180, ge=1, le=365)):
-    """北交所新股"""
-    data = spider.get_ipo_bj(days)
-    return {"code": 0, "data": data, "total": len(data)}
 
 
 @app.get("/api/reits/new")

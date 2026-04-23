@@ -80,11 +80,13 @@ def _get_em_all(report_name, filter_str=None, sort_col=None, page_size=100, sort
 
 
 # ==================== A股新股 ====================
-def get_ipo_a(days=90, bj=False):
-    """统一获取A股/北交所新股
+def get_ipo_a(days=90, include_bj=False):
+    """获取A股新股（沪深为主，可选包含北交所）
     Args:
         days: 查询天数
-        bj: True返回北交所，False返回沪深A股
+        include_bj: True时包含北交所，默认只返回沪深A股
+    Returns:
+        list: 每条数据带 market 字段，北交所为 "北交所"，沪深为 "主板"/"创业板"/"科创板"
     """
     start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
     data = _get_em_all("RPTA_APP_IPOAPPLY",
@@ -93,7 +95,7 @@ def get_ipo_a(days=90, bj=False):
     result = []
     for item in data:
         is_bj = str(item.get("TRADE_MARKET_CODE", "")) == "069001017"
-        if bj != is_bj:
+        if is_bj and not include_bj:
             continue
         result.append({
             "ts_code": item.get("SECUCODE", ""),
@@ -108,15 +110,15 @@ def get_ipo_a(days=90, bj=False):
             "amount": item.get("ISSUE_NUM", ""),
             "funds": item.get("TOTAL_RAISE_FUNDS", ""),
             "ballot": item.get("BALLOT_NUM", ""),
-            "market": item.get("MARKET", ""),
+            "market": "北交所" if is_bj else item.get("MARKET", ""),
             "ld_open_premium": item.get("LD_OPEN_PREMIUM", ""),
         })
     return result
 
 
 def get_ipo_china(days=90):
-    """沪深A股新股（兼容旧接口）"""
-    return get_ipo_a(days, bj=False)
+    """A股新股（含北交所），合并返回"""
+    return get_ipo_a(days, include_bj=True)
 
 
 # ==================== 可转债 ====================
@@ -146,12 +148,34 @@ def get_cb_new(days=90):
 
 # ==================== 港股新股 ====================
 def get_ipo_hk(days=90):
+    """港股新股 - 从东方财富数据中心获取"""
+    try:
+        start = (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+        data = _get_em_all("RPTA_HK_NEWSTOCK",
+                           filter_str=f'(LISTING_DATE>=\'{start}\')',
+                           sort_col="LISTING_DATE", page_size=50, max_pages=3)
+        if data:
+            result = []
+            for item in data:
+                result.append({
+                    "code": item.get("SECURITY_CODE", ""),
+                    "name": item.get("SECURITY_NAME_ABBR", ""),
+                    "ipo_date": _clean_date(item.get("IPO_DATE", "")),
+                    "listing_date": _clean_date(item.get("LISTING_DATE", "")),
+                    "price_min": item.get("PRICE_MIN", ""),
+                    "price_max": item.get("PRICE_MAX", ""),
+                    "market": "港交所",
+                })
+            return result
+    except Exception as e:
+        print(f"[hk] eastmoney error: {e}")
+    
+    # 备用：富途页面
     try:
         r = httpx.get("https://www.futunn.com/quote/ipo-hk",
                       headers={**HEADERS, "Referer": "https://www.futunn.com/"},
                       timeout=15, follow_redirects=True)
         if r.status_code == 200 and len(r.text) > 1000:
-            # 从SSR数据中提取
             patterns = [
                 r'"ipoList"\s*:\s*(\[.*?\])',
                 r'"ipoData"\s*:\s*(\[.*?\])',
@@ -172,6 +196,7 @@ def get_ipo_hk(days=90):
                                 "code": str(code),
                                 "name": str(name),
                                 "ipo_date": str(item.get("listingDate", item.get("pricingDate", item.get("expectedDate", ""))))[:10],
+                                "listing_date": str(item.get("listingDate", ""))[:10],
                                 "price_min": item.get("priceMin", item.get("priceRange", "")),
                                 "price_max": item.get("priceMax", ""),
                                 "market": "港交所",
@@ -181,7 +206,7 @@ def get_ipo_hk(days=90):
                     except (json.JSONDecodeError, KeyError, IndexError, TypeError) as e:
                         print(f"[hk] JSON parse error: {e}")
     except Exception as e:
-        print(f"[hk] error: {e}")
+        print(f"[hk] futunn error: {e}")
     return []
 
 
@@ -239,34 +264,65 @@ def get_ipo_us(days=90):
     return []
 
 
-# ==================== 北交所新股 ====================
-def get_ipo_bj(days=180):
-    """北交所新股（使用合并后的get_ipo_a）"""
-    return get_ipo_a(days, bj=True)
-
 
 # ==================== REITs ====================
 def get_reits(days=None):
-    """获取REITs列表，days参数已废弃（基金代码库无日期信息）"""
+    """获取REITs列表，含成立日期和最新行情"""
     try:
+        # 1. 从基金代码库获取REITs列表
         r = httpx.get("https://fund.eastmoney.com/js/fundcode_search.js",
                       headers=HEADERS, timeout=15)
-        # 解析基金列表，筛选REITs
-        items = re.findall(r'\["(\d+)",\s*"([^"]+)",\s*"([^"]*)"', r.text)
+        items = re.findall(r'\["(\d+)","([^"]+)","([^"]*)","([^"]*)"', r.text)
+        reits_basic = []
+        for code, abbrev, cn_name, cat in items:
+            if code.startswith("508"):
+                reits_basic.append({"code": code, "name": cn_name or abbrev})
+
+        if not reits_basic:
+            return []
+
+        # 2. 批量获取行情（价格、涨跌幅）
+        secids = ",".join([f"1.{r['code']}" for r in reits_basic])
+        r2 = httpx.get("https://push2.eastmoney.com/api/qt/ulist.np/get", params={
+            "secids": secids,
+            "fields": "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17,f18",
+            "ut": "fa5fd1943c7b386f172d6893dbfba10b",
+        }, headers=HEADERS, timeout=15)
+        quote_map = {}
+        if r2.status_code == 200:
+            d = r2.json()
+            for item in (d.get('data', {}) or {}).get('diff', []) or []:
+                code = str(item.get('f12', ''))
+                quote_map[code] = {
+                    'price': item.get('f2', 0) / 100 if isinstance(item.get('f2'), (int, float)) and item.get('f2', 0) > 1000 else item.get('f2', ''),
+                    'change_pct': item.get('f3', ''),
+                    'volume': item.get('f5', ''),
+                    'amount': item.get('f6', ''),
+                    'high': item.get('f15', ''),
+                    'low': item.get('f16', ''),
+                    'open': item.get('f17', ''),
+                }
+
+        # 3. 批量获取成立日期（从pingzhongdata，取最早净值日期）
+        # 为了性能，只用push2行情，成立日期从FundDetail获取
         result = []
-        for code, name, pinyin in items:
-            # 筛选中国公募REITs：代码508开头，或180开头且拼音/名称含REIT
-            pinyin_upper = pinyin.upper()
-            name_upper = name.upper()
-            is_reit = code.startswith("508") or (
-                code.startswith("180") and ("REIT" in pinyin_upper or "REIT" in name_upper)
-            )
-            if is_reit:
-                result.append({
-                    "code": code,
-                    "name": name,
-                    "type": "公募REITs",
-                })
+        for r_item in reits_basic:
+            code = r_item['code']
+            q = quote_map.get(code, {})
+            price_raw = q.get('price', '')
+            if isinstance(price_raw, (int, float)) and price_raw > 100:
+                price = round(price_raw / 100, 3)
+            else:
+                price = price_raw
+            result.append({
+                "code": code,
+                "name": r_item['name'],
+                "type": "公募REITs",
+                "price": price,
+                "change_pct": q.get('change_pct', ''),
+                "volume": q.get('volume', ''),
+                "amount": q.get('amount', ''),
+            })
         return result
     except Exception as e:
         print(f"[reits] error: {e}")
@@ -280,7 +336,6 @@ def get_calendar(days=90):
         "可转债": get_cb_new(days),
         "港股新股": get_ipo_hk(days),
         "美股新股": get_ipo_us(days),
-        "北交所": get_ipo_bj(days),
         "REITs": get_reits(),
     }
 

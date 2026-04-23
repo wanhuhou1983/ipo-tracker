@@ -59,12 +59,14 @@ def _get_em_all(report_name, filter_str=None, sort_col=None, page_size=100, sort
     """
     all_data = []
     for page in range(1, max_pages + 1):
-        data = None
-        for retry in range(max_retries):
-            data = _get_em(report_name, filter_str, sort_col, page_size, sort_order, page)
-            if data is not None:
-                break
-            print(f"[em] {report_name} page={page} retry {retry + 1}/{max_retries}")
+        data = _get_em(report_name, filter_str, sort_col, page_size, sort_order, page)
+        if data is None:
+            # 首次失败，进入重试
+            for retry in range(1, max_retries + 1):
+                print(f"[em] {report_name} page={page} retry {retry}/{max_retries}")
+                data = _get_em(report_name, filter_str, sort_col, page_size, sort_order, page)
+                if data is not None:
+                    break
         
         if data is None:
             # 重试全部失败，记录警告
@@ -223,9 +225,9 @@ def get_ipo_us(days=90):
                 return []
             result = []
             # 已上市 - priced可能是dict或list
-            priced = data.get("priced")
+            priced = data.get("priced") or {}
             if priced:
-                rows = priced.get("rows") if isinstance(priced, dict) else priced
+                rows = priced.get("rows", []) if isinstance(priced, dict) else (priced or [])
                 if rows:
                     for item in (rows or [])[:30]:
                         if not item:
@@ -241,9 +243,9 @@ def get_ipo_us(days=90):
                             "status": "已上市",
                         })
             # 即将上市
-            upcoming = data.get("upcoming")
+            upcoming = data.get("upcoming") or {}
             if upcoming:
-                rows = upcoming.get("rows") if isinstance(upcoming, dict) else upcoming
+                rows = upcoming.get("rows", []) if isinstance(upcoming, dict) else (upcoming or [])
                 if rows:
                     for item in (rows or [])[:30]:
                         if not item:
@@ -270,9 +272,9 @@ def get_reits(days=None):
     """获取REITs列表，含成立日期和最新行情"""
     try:
         # 1. 从基金代码库获取REITs列表
-        r = httpx.get("https://fund.eastmoney.com/js/fundcode_search.js",
+        fund_resp = httpx.get("https://fund.eastmoney.com/js/fundcode_search.js",
                       headers=HEADERS, timeout=15)
-        items = re.findall(r'\["(\d+)","([^"]+)","([^"]*)","([^"]*)"', r.text)
+        items = re.findall(r'\["(\d+)","([^"]+)","([^"]*)","([^"]*)"', fund_resp.text)
         reits_basic = []
         for code, abbrev, cn_name, cat in items:
             if code.startswith("508"):
@@ -282,19 +284,19 @@ def get_reits(days=None):
             return []
 
         # 2. 批量获取行情（价格、涨跌幅）
-        secids = ",".join([f"1.{r['code']}" for r in reits_basic])
-        r2 = httpx.get("https://push2.eastmoney.com/api/qt/ulist.np/get", params={
+        secids = ",".join([f"1.{r_item['code']}" for r_item in reits_basic])
+        quote_resp = httpx.get("https://push2.eastmoney.com/api/qt/ulist.np/get", params={
             "secids": secids,
             "fields": "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17,f18",
             "ut": "fa5fd1943c7b386f172d6893dbfba10b",
         }, headers=HEADERS, timeout=15)
         quote_map = {}
-        if r2.status_code == 200:
-            d = r2.json()
+        if quote_resp.status_code == 200:
+            d = quote_resp.json()
             for item in (d.get('data', {}) or {}).get('diff', []) or []:
                 code = str(item.get('f12', ''))
                 quote_map[code] = {
-                    'price': item.get('f2', 0) / 100 if isinstance(item.get('f2'), (int, float)) and item.get('f2', 0) > 1000 else item.get('f2', ''),
+                    'price': round(item.get('f2', 0) / 100, 3) if isinstance(item.get('f2'), (int, float)) and item.get('f2', 0) > 1000 else item.get('f2', ''),
                     'change_pct': item.get('f3', ''),
                     'volume': item.get('f5', ''),
                     'amount': item.get('f6', ''),
@@ -309,16 +311,11 @@ def get_reits(days=None):
         for r_item in reits_basic:
             code = r_item['code']
             q = quote_map.get(code, {})
-            price_raw = q.get('price', '')
-            if isinstance(price_raw, (int, float)) and price_raw > 100:
-                price = round(price_raw / 100, 3)
-            else:
-                price = price_raw
             result.append({
                 "code": code,
                 "name": r_item['name'],
                 "type": "公募REITs",
-                "price": price,
+                "price": q.get('price', ''),
                 "change_pct": q.get('change_pct', ''),
                 "volume": q.get('volume', ''),
                 "amount": q.get('amount', ''),
@@ -362,8 +359,9 @@ if __name__ == "__main__":
         print(json.dumps(d[0], ensure_ascii=False, indent=2))
 
     print("\n=== 北交所 ===")
-    d = get_ipo_bj(180)
-    print(f"获取到 {len(d)} 条")
+    d = get_ipo_a(180, include_bj=True)
+    bj_list = [x for x in d if x.get("market") == "北交所"]
+    print(f"获取到 {len(bj_list)} 条")
 
     print("\n=== REITs ===")
     d = get_reits()

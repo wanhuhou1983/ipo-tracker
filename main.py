@@ -10,6 +10,8 @@ from fastapi.responses import FileResponse
 import os
 
 app = FastAPI(title="IPO Tracker", version="2.0.0")
+# CORS: 此服务为纯只读数据查询，无固定域名部署，保留 allow_origins=["*"]
+# 如有固定域名，应收窄为 allow_origins=["https://your-domain.com"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,6 +29,10 @@ if os.path.isdir(static_dir):
 # ==================== API 接口 ====================
 @app.get("/")
 async def root():
+    """前端页面"""
+    index = os.path.join(static_dir, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index)
     return {"message": "IPO Tracker API", "version": "2.0.0"}
 
 
@@ -76,7 +82,7 @@ async def api_calendar(days: int = Query(90, ge=1, le=365)):
 
 @app.get("/app")
 async def app_page():
-    """前端页面"""
+    """前端页面入口（兼容旧链接）"""
     index = os.path.join(static_dir, "index.html")
     if os.path.exists(index):
         return FileResponse(index)

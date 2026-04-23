@@ -284,6 +284,7 @@ def get_reits(days=None):
             return []
 
         # 2. 批量获取行情（价格、涨跌幅）
+        # 1.=沪市(508xxx), 0.=深市(180xxx) — 当前只取508沪市REITs，未来扩展深市需改前缀
         secids = ",".join([f"1.{r_item['code']}" for r_item in reits_basic])
         quote_resp = httpx.get("https://push2.eastmoney.com/api/qt/ulist.np/get", params={
             "secids": secids,
@@ -296,7 +297,7 @@ def get_reits(days=None):
             for item in (d.get('data', {}) or {}).get('diff', []) or []:
                 code = str(item.get('f12', ''))
                 quote_map[code] = {
-                    'price': round(item.get('f2', 0) / 100, 3) if isinstance(item.get('f2'), (int, float)) and item.get('f2', 0) > 1000 else item.get('f2', ''),
+                    'price': round(item['f2'] / 100, 3) if isinstance(item.get('f2'), (int, float)) else '',
                     'change_pct': item.get('f3', ''),
                     'volume': item.get('f5', ''),
                     'amount': item.get('f6', ''),
@@ -359,9 +360,11 @@ if __name__ == "__main__":
         print(json.dumps(d[0], ensure_ascii=False, indent=2))
 
     print("\n=== 北交所 ===")
-    d = get_ipo_a(180, include_bj=True)
-    bj_list = [x for x in d if x.get("market") == "北交所"]
-    print(f"获取到 {len(bj_list)} 条")
+    d = get_ipo_a(180, include_bj=False)
+    print(f"获取到 {len(d)} 条沪深A股（不含北交所）")
+    d_bj = get_ipo_a(180, include_bj=True)
+    bj_list = [x for x in d_bj if x.get("market") == "北交所"]
+    print(f"获取到 {len(bj_list)} 条北交所")
 
     print("\n=== REITs ===")
     d = get_reits()

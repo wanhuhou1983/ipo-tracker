@@ -12,11 +12,10 @@ from fastapi.responses import FileResponse
 import os
 
 app = FastAPI(title="IPO Tracker", version="2.0.0")
-# CORS: 此服务为纯只读数据查询，无固定域名部署，保留 allow_origins=["*"]
-# 如有固定域名，应收窄为 allow_origins=["https://your-domain.com"]
+# CORS: 限制为本机访问（配合nginx反代时使用127.0.0.1）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost", "http://127.0.0.1"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

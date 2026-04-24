@@ -150,11 +150,11 @@ def get_cb_new(days=90):
 # ==================== 港股新股 ====================
 def get_ipo_hk(days=90):
     """港股新股 - 从东方财富港股IPO页面HTML解析
-    数据源: http://hk.eastmoney.com/ipolist.html
+    数据源: https://hk.eastmoney.com/ipolist.html
     表格字段: 序号, 股票代码, 股票名称, 招股价, 招股数(股), 募集资金(港元), 招股日期, 上市日期
     """
     try:
-        r = httpx.get("http://hk.eastmoney.com/ipolist.html",
+        r = httpx.get("https://hk.eastmoney.com/ipolist.html",
                       headers=HEADERS, timeout=15, follow_redirects=True)
         if r.status_code != 200:
             print(f"[hk] page status={r.status_code}")

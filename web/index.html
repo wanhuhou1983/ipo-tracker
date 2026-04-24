@@ -97,7 +97,7 @@
 <body>
     <div class="header">
         <h1>📈 IPO Tracker</h1>
-        <p>新股 · 可转债 · REITs 一站查询</p>
+        <p>新股 · 可转债 一站查询</p>
     </div>
     
     <div class="tabs" id="tabs">
@@ -106,7 +106,6 @@
         <div class="tab" data-type="china">A股</div>
         <div class="tab" data-type="hk">港股</div>
         <div class="tab" data-type="us">美股</div>
-        <div class="tab" data-type="reits">REITs</div>
     </div>
     
     <div class="content" id="content">
@@ -161,8 +160,7 @@
                     case 'china': url=`${API_BASE}/api/ipo/china`; renderFn=renderChina; break;
                     case 'hk': url=`${API_BASE}/api/ipo/hk`; renderFn=renderHK; break;
                     case 'us': url=`${API_BASE}/api/ipo/us`; renderFn=renderUS; break;
-                    case 'reits': url=`${API_BASE}/api/reits/new`; renderFn=renderREITs; break;
-                }
+                                    }
                 const res = await fetch(url);
                 const json = await res.json();
                 content.innerHTML = renderFn(json.data || json);
@@ -247,7 +245,7 @@
                 <div class="cal-header">
                     <div class="cal-nav"><button onclick="changeMonth(-1)">&lt;</button></div>
                     <h3>${calYear}年${monthNames[calMonth]}</h3>
-                    <div class="cal-nav"><button onclick="changeMonth(1)">&gt;</button></div>
+                    <div class="cal-nav"><button onclick="goToday()">今日</button><button onclick="changeMonth(1)">&gt;</button></div>
                 </div>
                 <div class="cal-legend">
                     <span><i class="dot dot-subscribe"></i> 申购</span>
@@ -294,6 +292,14 @@
             content.innerHTML=html;
         }
         
+        function goToday(){
+            const now=new Date();
+            calYear=now.getFullYear();
+            calMonth=now.getMonth();
+            selectedDate=now.toISOString().slice(0,10);
+            renderCalendarView();
+        }
+        
         function changeMonth(delta){
             calMonth+=delta;
             if(calMonth<0){calMonth=11;calYear--;}
@@ -337,16 +343,7 @@
             return data.map(item=>`<div class="card"><div class="card-header"><span class="card-title">${item.name}</span><span class="card-tag" style="background:#f3e5f5;color:#7b1fa2">美股</span></div><div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.symbol}</span></div><div class="card-row"><span class="card-label">发行价</span><span class="card-value">$${item.price}</span></div><div class="card-row"><span class="card-label">预期上市</span><span class="card-value">${item.ipo_date||'-'}</span></div></div>`).join('');
         }
         
-        function renderREITs(data) {
-            if(!data||!data.length) return '<div class="empty">暂无REITs</div>';
-            return data.map(item=>{
-                const changeVal=parseFloat(item.change_pct)||0;
-                const changeColor=changeVal>0?'#f5222d':(changeVal<0?'#52c41a':'#999');
-                const changeText=changeVal>0?`+${item.change_pct}%`:`${item.change_pct}%`;
-                return `<div class="card"><div class="card-header"><span class="card-title">${item.name}</span><span class="card-tag" style="background:#e0f2f1;color:#00695c">REITs</span></div><div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.code}</span></div>${item.price?`<div class="card-row"><span class="card-label">最新价</span><span class="card-value">${item.price}元</span></div>`:''}${item.change_pct!==''&&item.change_pct!==undefined?`<div class="card-row"><span class="card-label">涨跌幅</span><span class="card-value" style="color:${changeColor}">${changeText}</span></div>`:''}</div>`;
-            }).join('');
-        }
-        
+                
         loadCalendarData();
     </script>
 </body>

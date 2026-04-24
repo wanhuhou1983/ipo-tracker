@@ -1,6 +1,8 @@
 """
-IPO Tracker - 新股/可转债/REITs 一站式查询
+
+IPO Tracker - 新股/可转债 一站式查询
 轻量级FastAPI服务，数据从东方财富/NASDAQ实时抓取
+
 """
 import spider
 from fastapi import FastAPI, Query
@@ -65,12 +67,6 @@ async def api_us(days: int = Query(90, ge=1, le=365)):
 
 
 
-
-@app.get("/api/reits/new")
-async def api_reits():
-    """REITs（返回全部，无日期过滤）"""
-    data = spider.get_reits()
-    return {"code": 0, "data": data, "total": len(data)}
 
 
 @app.get("/api/calendar")

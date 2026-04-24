@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
-"""IPO Tracker 数据爬虫 - 最终版
+"""IPO Tracker 数据爬虫
 数据源：
 - A股新股/北交所：东方财富 RPTA_APP_IPOAPPLY
 - 可转债：东方财富 RPT_BOND_CB_LIST  
 - 港股新股：东方财富港股频道HTML页面解析 (hk.eastmoney.com/ipolist.html)
 - 美股新股：NASDAQ IPO Calendar API
-- REITs：东方财富基金代码库（fundcode_search.js）
 """
 import httpx
 import json
@@ -268,66 +267,6 @@ def get_ipo_us(days=90):
 
 
 
-# ==================== REITs ====================
-def get_reits(days=None):
-    """获取REITs列表，含成立日期和最新行情"""
-    try:
-        # 1. 从基金代码库获取REITs列表
-        fund_resp = httpx.get("https://fund.eastmoney.com/js/fundcode_search.js",
-                      headers=HEADERS, timeout=15)
-        items = re.findall(r'\["(\d+)","([^"]+)","([^"]*)","([^"]*)"', fund_resp.text)
-        reits_basic = []
-        for code, abbrev, cn_name, cat in items:
-            if code.startswith("508"):
-                reits_basic.append({"code": code, "name": cn_name or abbrev})
-
-        if not reits_basic:
-            return []
-
-        # 2. 批量获取行情（价格、涨跌幅）
-        # 1.=沪市(508xxx), 0.=深市(180xxx) — 当前只取508沪市REITs，未来扩展深市需改前缀
-        secids = ",".join([f"1.{r_item['code']}" for r_item in reits_basic])
-        quote_resp = httpx.get("https://push2.eastmoney.com/api/qt/ulist.np/get", params={
-            "secids": secids,
-            "fields": "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17,f18",
-            "ut": "fa5fd1943c7b386f172d6893dbfba10b",
-        }, headers=HEADERS, timeout=15)
-        quote_map = {}
-        if quote_resp.status_code == 200:
-            d = quote_resp.json()
-            for item in (d.get('data', {}) or {}).get('diff', []) or []:
-                code = str(item.get('f12', ''))
-                quote_map[code] = {
-                    'price': round(item['f2'] / 100, 3) if isinstance(item.get('f2'), (int, float)) else '',
-                    'change_pct': item.get('f3', ''),
-                    'volume': item.get('f5', ''),
-                    'amount': item.get('f6', ''),
-                    'high': item.get('f15', ''),
-                    'low': item.get('f16', ''),
-                    'open': item.get('f17', ''),
-                }
-
-        # 3. 批量获取成立日期（从pingzhongdata，取最早净值日期）
-        # 为了性能，只用push2行情，成立日期从FundDetail获取
-        result = []
-        for r_item in reits_basic:
-            code = r_item['code']
-            q = quote_map.get(code, {})
-            result.append({
-                "code": code,
-                "name": r_item['name'],
-                "type": "公募REITs",
-                "price": q.get('price', ''),
-                "change_pct": q.get('change_pct', ''),
-                "volume": q.get('volume', ''),
-                "amount": q.get('amount', ''),
-            })
-        return result
-    except Exception as e:
-        print(f"[reits] error: {e}")
-        return []
-
-
 # ==================== 综合日历 ====================
 def get_calendar(days=90):
     return {
@@ -335,7 +274,6 @@ def get_calendar(days=90):
         "可转债": get_cb_new(days),
         "港股新股": get_ipo_hk(days),
         "美股新股": get_ipo_us(days),
-        "REITs": get_reits(),
     }
 
 

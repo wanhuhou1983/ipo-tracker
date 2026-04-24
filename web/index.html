@@ -92,6 +92,60 @@
         .cal-detail-item:last-child { border-bottom: none; }
         .cal-detail-name { color: #333; font-weight: 500; }
         .cal-detail-tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+        
+        /* 持仓页面样式 */
+        .portfolio-summary { background: linear-gradient(135deg, #1a1a2e, #16213e); 
+                            border-radius: 12px; padding: 20px; color: white; margin-bottom: 16px; }
+        .portfolio-summary h3 { font-size: 14px; opacity: 0.8; margin-bottom: 8px; }
+        .portfolio-summary .total-value { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+        .portfolio-summary .total-pnl { font-size: 14px; }
+        .portfolio-summary .total-pnl.positive { color: #ff4d4f; }
+        .portfolio-summary .total-pnl.negative { color: #52c41a; }
+        
+        .market-section { margin-bottom: 16px; }
+        .market-header { display: flex; justify-content: space-between; align-items: center;
+                        padding: 12px 0; border-bottom: 1px solid #eee; margin-bottom: 8px; }
+        .market-name { font-size: 15px; font-weight: 600; color: #333; }
+        .market-pnl { font-size: 14px; font-weight: 500; }
+        .market-pnl.positive { color: #ff4d4f; }
+        .market-pnl.negative { color: #52c41a; }
+        
+        .position-item { background: white; border-radius: 8px; padding: 12px; margin-bottom: 8px;
+                        display: flex; justify-content: space-between; align-items: center; }
+        .position-info { flex: 1; }
+        .position-code { font-size: 15px; font-weight: 600; color: #333; }
+        .position-shares { font-size: 12px; color: #999; margin-top: 2px; }
+        .position-price { text-align: right; }
+        .position-current { font-size: 15px; font-weight: 600; color: #333; }
+        .position-pnl { font-size: 12px; margin-top: 2px; }
+        .position-pnl.positive { color: #ff4d4f; }
+        .position-pnl.negative { color: #52c41a; }
+        
+        .add-btn { position: fixed; right: 20px; bottom: 90px; width: 50px; height: 50px;
+                   background: #1890ff; border-radius: 50%; color: white; display: flex;
+                   align-items: center; justify-content: center; font-size: 24px;
+                   box-shadow: 0 4px 12px rgba(24,144,255,0.4); cursor: pointer; z-index: 100; }
+        
+        .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.show { display: flex; }
+        .modal-content { background: white; border-radius: 12px; padding: 20px; width: 90%;
+                        max-width: 400px; max-height: 80vh; overflow-y: auto; }
+        .modal-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ddd;
+                                                border-radius: 8px; font-size: 14px; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #1890ff; }
+        .form-btns { display: flex; gap: 10px; margin-top: 16px; }
+        .form-btns button { flex: 1; padding: 10px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+        .btn-primary { background: #1890ff; color: white; }
+        .btn-secondary { background: #f0f0f0; color: #666; }
+        
+        .upload-area { border: 2px dashed #ddd; border-radius: 8px; padding: 30px; text-align: center;
+                      cursor: pointer; margin-bottom: 12px; }
+        .upload-area:hover { border-color: #1890ff; }
+        .upload-area p { color: #999; font-size: 13px; }
     </style>
 </head>
 <body>
@@ -106,6 +160,7 @@
         <div class="tab" data-type="china">A股</div>
         <div class="tab" data-type="hk">港股</div>
         <div class="tab" data-type="us">美股</div>
+        <div class="tab" data-type="portfolio">持仓</div>
     </div>
     
     <div class="content" id="content">
@@ -160,7 +215,8 @@
                     case 'china': url=`${API_BASE}/api/ipo/china`; renderFn=renderChina; break;
                     case 'hk': url=`${API_BASE}/api/ipo/hk`; renderFn=renderHK; break;
                     case 'us': url=`${API_BASE}/api/ipo/us`; renderFn=renderUS; break;
-                                    }
+                    case 'portfolio': loadPortfolio(); return;
+                }
                 const res = await fetch(url);
                 const json = await res.json();
                 content.innerHTML = renderFn(json.data || json);
@@ -343,7 +399,164 @@
             return data.map(item=>`<div class="card"><div class="card-header"><span class="card-title">${item.name}</span><span class="card-tag" style="background:#f3e5f5;color:#7b1fa2">美股</span></div><div class="card-row"><span class="card-label">代码</span><span class="card-value">${item.symbol}</span></div><div class="card-row"><span class="card-label">发行价</span><span class="card-value">$${item.price}</span></div><div class="card-row"><span class="card-label">预期上市</span><span class="card-value">${item.ipo_date||'-'}</span></div></div>`).join('');
         }
         
+        // ==================== 持仓相关函数 ====================
+        let portfolioData = null;
+        
+        async function loadPortfolio() {
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading">加载持仓...</div>';
+            try {
+                const res = await fetch(`${API_BASE}/api/portfolio`);
+                const json = await res.json();
+                portfolioData = json.data;
+                content.innerHTML = renderPortfolio(json.data);
+            } catch(e) {
+                content.innerHTML = `<div class="empty">加载失败<br>${e.message}</div>`;
+            }
+        }
+        
+        function renderPortfolio(data) {
+            if (!data) return '<div class="empty">暂无持仓</div>';
+            
+            let html = '';
+            
+            // 计算总计
+            let totalValue = 0, totalPnl = 0;
+            ['A股', '港股', '美股'].forEach(m => {
+                totalValue += data[m]?.total_market_value || 0;
+                totalPnl += data[m]?.total_pnl || 0;
+            });
+            
+            const pnlClass = totalPnl >= 0 ? 'positive' : 'negative';
+            const pnlSign = totalPnl >= 0 ? '+' : '';
+            
+            // 总览
+            html += `<div class="portfolio-summary">
+                <h3>总市值</h3>
+                <div class="total-value">¥${totalValue.toLocaleString()}</div>
+                <div class="total-pnl ${pnlClass}">${pnlSign}¥${totalPnl.toLocaleString()}</div>
+            </div>`;
+            
+            // 分市场显示
+            ['A股', '港股', '美股'].forEach(market => {
+                const m = data[market];
+                if (!m || !m.positions || m.positions.length === 0) return;
                 
+                const marketPnlClass = m.total_pnl >= 0 ? 'positive' : 'negative';
+                const marketPnlSign = m.total_pnl >= 0 ? '+' : '';
+                
+                html += `<div class="market-section">
+                    <div class="market-header">
+                        <span class="market-name">${market}</span>
+                        <span class="market-pnl ${marketPnlClass}">${marketPnlSign}¥${m.total_pnl.toLocaleString()}</span>
+                    </div>`;
+                
+                m.positions.forEach(pos => {
+                    const posPnlClass = pos.pnl >= 0 ? 'positive' : 'negative';
+                    const posPnlSign = pos.pnl >= 0 ? '+' : '';
+                    html += `<div class="position-item">
+                        <div class="position-info">
+                            <div class="position-code">${pos.stock_code}</div>
+                            <div class="position-shares">${pos.shares}股 · 成本¥${pos.cost_price}</div>
+                        </div>
+                        <div class="position-price">
+                            <div class="position-current">¥${pos.current_price}</div>
+                            <div class="position-pnl ${posPnlClass}">${posPnlSign}¥${pos.pnl}</div>
+                        </div>
+                    </div>`;
+                });
+                
+                html += '</div>';
+            });
+            
+            if (totalValue === 0) {
+                html += '<div class="empty">暂无持仓<br>点击右下角+添加</div>';
+            }
+            
+            // 添加按钮
+            html += '<div class="add-btn" onclick="showAddModal()">+</div>';
+            
+            // 添加弹窗
+            html += `<div class="modal" id="addModal">
+                <div class="modal-content">
+                    <div class="modal-title">添加持仓</div>
+                    <div class="form-group">
+                        <label>市场</label>
+                        <select id="posMarket">
+                            <option value="A股">A股</option>
+                            <option value="港股">港股</option>
+                            <option value="美股">美股</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>股票代码</label>
+                        <input type="text" id="posCode" placeholder="如: 000001">
+                    </div>
+                    <div class="form-group">
+                        <label>持仓数量</label>
+                        <input type="number" id="posShares" placeholder="股数">
+                    </div>
+                    <div class="form-group">
+                        <label>成本价</label>
+                        <input type="number" id="posCost" placeholder="每股成本">
+                    </div>
+                    <div class="form-btns">
+                        <button class="btn-secondary" onclick="closeAddModal()">取消</button>
+                        <button class="btn-primary" onclick="submitPosition()">添加</button>
+                    </div>
+                </div>
+            </div>`;
+            
+            return html;
+        }
+        
+        function showAddModal() {
+            document.getElementById('addModal').classList.add('show');
+        }
+        
+        function closeAddModal() {
+            document.getElementById('addModal').classList.remove('show');
+            document.getElementById('posCode').value = '';
+            document.getElementById('posShares').value = '';
+            document.getElementById('posCost').value = '';
+        }
+        
+        async function submitPosition() {
+            const market = document.getElementById('posMarket').value;
+            const stock_code = document.getElementById('posCode').value.trim();
+            const shares = parseFloat(document.getElementById('posShares').value);
+            const cost_price = parseFloat(document.getElementById('posCost').value);
+            
+            if (!stock_code || !shares || !cost_price) {
+                alert('请填写完整信息');
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_BASE}/api/portfolio`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        user_id: 'default',
+                        stock_code,
+                        market,
+                        shares,
+                        cost_price,
+                        source: 'manual'
+                    })
+                });
+                const json = await res.json();
+                if (json.code === 0) {
+                    closeAddModal();
+                    loadPortfolio();
+                } else {
+                    alert(json.message || '添加失败');
+                }
+            } catch(e) {
+                alert('添加失败: ' + e.message);
+            }
+        }
+        
         loadCalendarData();
     </script>
 </body>

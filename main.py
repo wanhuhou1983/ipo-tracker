@@ -8,6 +8,10 @@ import spider
 import portfolio
 import price
 import recognize
+import cache
+import user
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Query, Body, UploadFile, File
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,15 +19,25 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
+# 同步爬虫函数放到线程池，避免阻塞async事件循环
+_executor = ThreadPoolExecutor(max_workers=4)
+
+def _run_sync(fn, *args):
+    return _executor.submit(fn, *args).result()
+
 app = FastAPI(title="IPO Tracker", version="2.0.0")
-# CORS: 限制为本机访问（配合nginx反代时使用127.0.0.1）
+# CORS: 允许小程序和Web访问
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://127.0.0.1"],
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 启动时初始化 PG 缓存表和用户表
+cache.init_cache()
+user.init_user_tables()
 
 # 静态文件
 static_dir = os.path.join(os.path.dirname(__file__), "web")
@@ -44,28 +58,32 @@ async def root():
 @app.get("/api/cb/new")
 async def api_cb(days: int = Query(90, ge=1, le=365)):
     """可转债"""
-    data = spider.get_cb_new(days)
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(_executor, cache.with_cache, "cb", 30, spider.get_cb_new, days)
     return {"code": 0, "data": data, "total": len(data)}
 
 
 @app.get("/api/ipo/china")
 async def api_china(days: int = Query(90, ge=1, le=365)):
     """A股新股（含北交所）"""
-    data = spider.get_ipo_china(days)
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(_executor, cache.with_cache, "china", 30, spider.get_ipo_china, days)
     return {"code": 0, "data": data, "total": len(data)}
 
 
 @app.get("/api/ipo/hk")
 async def api_hk(days: int = Query(90, ge=1, le=365)):
     """港股新股"""
-    data = spider.get_ipo_hk(days)
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(_executor, cache.with_cache, "hk", 60, spider.get_ipo_hk, days)
     return {"code": 0, "data": data, "total": len(data)}
 
 
 @app.get("/api/ipo/us")
 async def api_us(days: int = Query(90, ge=1, le=365)):
     """美股新股"""
-    data = spider.get_ipo_us(days)
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(_executor, cache.with_cache, "us", 60, spider.get_ipo_us, days)
     return {"code": 0, "data": data, "total": len(data)}
 
 
@@ -75,7 +93,8 @@ async def api_us(days: int = Query(90, ge=1, le=365)):
 @app.get("/api/calendar")
 async def api_calendar(days: int = Query(90, ge=1, le=365)):
     """综合日历"""
-    data = spider.get_calendar(days)
+    loop = asyncio.get_event_loop()
+    data = await loop.run_in_executor(_executor, cache.with_cache, "cal", 30, spider.get_calendar, days)
     return {"code": 0, "data": data}
 
 
@@ -138,6 +157,51 @@ async def get_stock_price(market: str, stock_code: str):
     return {"code": 1, "message": "获取价格失败"}
 
 
+# ==================== 用户管理接口 ====================
+
+@app.post("/api/user/login")
+async def user_login(code: str = Body(..., embed=True)):
+    """微信登录：接收 code 返回 openid"""
+    return user.wx_login(code)
+
+
+@app.get("/api/user/follows")
+async def user_follows(openid: str = Query(...)):
+    """获取用户关注列表"""
+    data = user.get_follows(openid)
+    return {"code": 0, "data": data}
+
+
+class FollowInput(BaseModel):
+    openid: str
+    follow_type: str
+    stock_code: str
+    stock_name: str
+    listing_date: str = ""
+    apply_date: str = ""
+
+
+@app.post("/api/user/follow")
+async def user_follow(follow: FollowInput):
+    """添加关注"""
+    return user.add_follow(
+        follow.openid, follow.follow_type, follow.stock_code,
+        follow.stock_name, follow.listing_date, follow.apply_date
+    )
+
+
+@app.delete("/api/user/follow/{follow_id}")
+async def user_unfollow(follow_id: int, openid: str = Query(...)):
+    """取消关注"""
+    return user.remove_follow(openid, follow_id)
+
+
+@app.get("/api/user/ischecked")
+async def user_ischecked(openid: str = Query(...), follow_type: str = Query(...), stock_code: str = Query(...)):
+    """检查是否已关注"""
+    return {"code": 0, "followed": user.is_followed(openid, follow_type, stock_code)}
+
+
 # ==================== 照片识别接口 ====================
 
 @app.post("/api/recognize")
@@ -166,4 +230,4 @@ async def check_recognize_status():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

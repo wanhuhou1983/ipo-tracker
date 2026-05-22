@@ -7,17 +7,18 @@ PG 不可用时自动降级为实时抓取，不抛异常。
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger("ipo-cache")
 
-# PG 连接参数
+# PG 连接参数（环境变量可覆盖）
 PG_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "user": "postgres",
-    "password": "linhu50115",
-    "dbname": "postgres",
+    "host": os.environ.get("PG_HOST", "localhost"),
+    "port": int(os.environ.get("PG_PORT", "5432")),
+    "user": os.environ.get("PG_USER", "postgres"),
+    "password": os.environ.get("PG_PASSWORD", "linhu50115"),
+    "dbname": os.environ.get("PG_DATABASE", "postgres"),
 }
 
 _conn = None
